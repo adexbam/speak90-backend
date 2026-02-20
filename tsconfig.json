@@ -1,0 +1,16 @@
+{
+    "compilerOptions": {
+        "rootDir": ".",
+        "target": "ES2022",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "outDir": "dist",
+        "strict": true,
+        "verbatimModuleSyntax": true,
+        "isolatedModules": true,
+        "skipLibCheck": true,
+        "types": ["node"],
+        "typeRoots": ["./tests/types", "./node_modules/@types"]
+    },
+    "include": ["src", "tests/types"]
+}

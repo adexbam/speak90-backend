@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+.env.local
+.env.dev
+.env.test
+.env.prod
+.env.production
+.DS_Store
