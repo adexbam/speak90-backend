@@ -15,33 +15,6 @@ export async function createOrGetSessionCompletion(params: {
 }): Promise<SessionCompletionRecord> {
     const pool = getDbPool();
 
-    const existing = await pool.query<{
-        id: string;
-        day_number: number;
-        elapsed_seconds: number;
-        completed_at: string;
-    }>(
-        `
-        SELECT id, day_number, elapsed_seconds, completed_at
-        FROM session_completions
-        WHERE subject_id = $1
-          AND day_number = $2
-          AND completed_at = $3
-        LIMIT 1
-        `,
-        [params.subjectId, params.dayNumber, params.completedAt]
-    );
-
-    if (existing.rowCount && existing.rows[0]) {
-        const row = existing.rows[0];
-        return {
-            sessionId: row.id,
-            dayNumber: row.day_number,
-            elapsedSeconds: row.elapsed_seconds,
-            completedAt: new Date(row.completed_at).toISOString(),
-        };
-    }
-
     const inserted = await pool.query<{
         id: string;
         day_number: number;
@@ -51,6 +24,8 @@ export async function createOrGetSessionCompletion(params: {
         `
         INSERT INTO session_completions (subject_id, day_number, elapsed_seconds, completed_at)
         VALUES ($1, $2, $3, $4)
+        ON CONFLICT (subject_id, day_number, completed_at) DO UPDATE
+        SET elapsed_seconds = session_completions.elapsed_seconds
         RETURNING id, day_number, elapsed_seconds, completed_at
         `,
         [

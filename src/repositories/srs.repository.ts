@@ -11,7 +11,7 @@ export type SrsCardInput = {
 export type SrsCardRecord = {
     cardId: string;
     box: number;
-    dueAt: string;
+    dueAt: string | null;
     reviewCount: number;
     updatedAt: string;
 };
@@ -98,7 +98,7 @@ export async function listSrsCards(subjectId: string): Promise<SrsCardRecord[]> 
     return result.rows.map((row) => ({
         cardId: row.card_id,
         box: row.box,
-        dueAt: row.due_at ? new Date(row.due_at).toISOString() : new Date().toISOString(),
+        dueAt: row.due_at ? new Date(row.due_at).toISOString() : null,
         reviewCount: row.review_count,
         updatedAt: new Date(row.updated_at).toISOString(),
     }));

@@ -11,6 +11,19 @@ const srsCardSchema = {
     },
 } as const;
 
+const srsCardResponseSchema = {
+    type: "object",
+    additionalProperties: false,
+    required: ["cardId", "box", "dueAt", "reviewCount", "updatedAt"],
+    properties: {
+        cardId: { type: "string", minLength: 1 },
+        box: { type: "integer", minimum: 1 },
+        dueAt: { type: ["string", "null"], format: "date-time" },
+        reviewCount: { type: "integer", minimum: 0 },
+        updatedAt: { type: "string", format: "date-time" },
+    },
+} as const;
+
 export const putSrsCardsBulkSchema = {
     tags: ["SRS"],
     summary: "Bulk upsert SRS cards with last-write-wins updatedAt conflict handling",
@@ -30,7 +43,7 @@ export const putSrsCardsBulkSchema = {
             type: "object",
             required: ["cards"],
             properties: {
-                cards: { type: "array", items: srsCardSchema },
+                cards: { type: "array", items: srsCardResponseSchema },
             },
         },
     },
@@ -44,7 +57,7 @@ export const getSrsCardsSchema = {
             type: "object",
             required: ["cards"],
             properties: {
-                cards: { type: "array", items: srsCardSchema },
+                cards: { type: "array", items: srsCardResponseSchema },
             },
         },
     },

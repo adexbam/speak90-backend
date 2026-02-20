@@ -5,11 +5,33 @@ import {
     type SrsCardInput,
 } from "../repositories/srs.repository.js";
 
+function dedupeCardsByIdLww(cards: SrsCardInput[]): SrsCardInput[] {
+    const indexByCardId = new Map<string, SrsCardInput>();
+    for (const card of cards) {
+        const existing = indexByCardId.get(card.cardId);
+        if (!existing) {
+            indexByCardId.set(card.cardId, card);
+            continue;
+        }
+
+        const nextTs = new Date(card.updatedAt).getTime();
+        const currentTs = new Date(existing.updatedAt).getTime();
+        if (nextTs >= currentTs) {
+            indexByCardId.set(card.cardId, card);
+        }
+    }
+    return [...indexByCardId.values()];
+}
+
 export async function saveSrsCards(params: {
     subjectId: string;
     cards: SrsCardInput[];
 }) {
-    await upsertSrsCardsLww(params);
+    const dedupedCards = dedupeCardsByIdLww(params.cards);
+    await upsertSrsCardsLww({
+        subjectId: params.subjectId,
+        cards: dedupedCards,
+    });
     const cards = await listSrsCards(params.subjectId);
     return { cards };
 }
