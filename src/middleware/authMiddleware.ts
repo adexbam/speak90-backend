@@ -1,21 +1,53 @@
 import dotenv from "dotenv";
+import { createHash } from "node:crypto";
 import jwt from "jsonwebtoken";
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { isActiveSessionForAccessToken } from "../repositories/device-session.repository.js";
 import { logger } from "../utils/logger.js";
-
 
 dotenv.config();
 
 type AuthRequest = FastifyRequest & { user?: any };
 
-export const authenticate = async (
-    req: AuthRequest,
-    reply: FastifyReply
-) => {
-    const token =
-        typeof req.headers.authorization === "string"
-            ? req.headers.authorization.split(" ")[1]
-            : undefined;
+type DeviceTokenClaims = {
+    sub?: string;
+    tokenType?: string;
+    deviceId?: string;
+};
+
+function parseBearerToken(headerValue: unknown): string | undefined {
+    if (typeof headerValue !== "string") {
+        return undefined;
+    }
+    const [scheme, token] = headerValue.split(" ");
+    if (scheme !== "Bearer" || !token) {
+        return undefined;
+    }
+    return token;
+}
+
+function hashToken(token: string): string {
+    return createHash("sha256").update(token).digest("hex");
+}
+
+function validateDeviceClaims(claims: DeviceTokenClaims): {
+    ok: boolean;
+    error?: string;
+} {
+    if (claims.tokenType !== "device") {
+        return { ok: false, error: "Unauthorized: invalid token type" };
+    }
+    if (!claims.sub || !claims.sub.startsWith("dev_")) {
+        return { ok: false, error: "Unauthorized: invalid token subject" };
+    }
+    if (!claims.deviceId || typeof claims.deviceId !== "string") {
+        return { ok: false, error: "Unauthorized: missing device id claim" };
+    }
+    return { ok: true };
+}
+
+export const authenticate = async (req: AuthRequest, reply: FastifyReply) => {
+    const token = parseBearerToken(req.headers.authorization);
     if (!token) {
         return reply.status(401).send({
             error: "Missing Bearer token in Authorization header",
@@ -29,10 +61,27 @@ export const authenticate = async (
                 error: "JWT_SECRET is not configured",
             });
         }
-        const decoded = jwt.verify(token, secret);
 
-        // req.user = {};
-        req.user = decoded; // contains huuid, groups, etc.
+        const decoded = jwt.verify(token, secret) as DeviceTokenClaims;
+        const claimsValidation = validateDeviceClaims(decoded);
+        if (!claimsValidation.ok) {
+            return reply.status(401).send({
+                error: claimsValidation.error,
+            });
+        }
+
+        const isActive = await isActiveSessionForAccessToken({
+            accessTokenHash: hashToken(token),
+            deviceId: decoded.deviceId as string,
+        });
+
+        if (!isActive) {
+            return reply.status(401).send({
+                error: "Unauthorized: session not active",
+            });
+        }
+
+        req.user = decoded;
     } catch (err) {
         logger.error(
             {
@@ -70,10 +119,7 @@ export const authorize = (allowedGroups: string[] = []) => {
 export const authenticateAndAuthorize =
     (requiredGroups: string[] = []) =>
     async (req: AuthRequest, reply: FastifyReply) => {
-        const token =
-            typeof req.headers.authorization === "string"
-                ? req.headers.authorization.split(" ")[1]
-                : undefined;
+        const token = parseBearerToken(req.headers.authorization);
 
         if (!token) {
             return reply.status(401).send({

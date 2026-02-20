@@ -33,6 +33,14 @@ export async function upsertSrsCardsLww(params: {
     }
 
     const pool = getDbPool();
+    const serializedCards = params.cards.map((card) => ({
+        card_id: card.cardId,
+        box: card.box,
+        due_at: card.dueAt,
+        review_count: card.reviewCount,
+        updated_at: card.updatedAt,
+    }));
+
     await pool.query(
         `
         INSERT INTO srs_cards (
@@ -65,7 +73,7 @@ export async function upsertSrsCardsLww(params: {
             updated_at = EXCLUDED.updated_at
         WHERE srs_cards.updated_at <= EXCLUDED.updated_at
         `,
-        [params.subjectId, JSON.stringify(params.cards)]
+        [params.subjectId, JSON.stringify(serializedCards)]
     );
 }
 

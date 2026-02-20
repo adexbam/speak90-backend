@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import jwt from "jsonwebtoken";
 import type { FastifyInstance } from "fastify";
 import { App } from "../../src/app.js";
 import { getDbPool } from "../../src/db/client.js";
@@ -72,6 +73,89 @@ describe("Ticket 30.1 auth + config endpoints", () => {
             body.accessToken.slice(0, 10)
         );
         expect(dbResult.rows[0].refresh_token_hash).toBeTruthy();
+    });
+
+    it("refreshes session tokens and invalidates previous tokens", async () => {
+        const deviceId = `test-device-${randomUUID()}`;
+        const created = await app!.inject({
+            method: "POST",
+            url: "/v1/auth/device-session",
+            payload: {
+                deviceId,
+                platform: "android",
+                appVersion: "1.0.0",
+            },
+        });
+
+        expect(created.statusCode).toBe(201);
+        const first = created.json<{
+            accessToken: string;
+            refreshToken: string;
+            expiresAt: string;
+        }>();
+
+        const refreshed = await app!.inject({
+            method: "POST",
+            url: "/v1/auth/refresh",
+            payload: {
+                refreshToken: first.refreshToken,
+            },
+        });
+
+        expect(refreshed.statusCode).toBe(200);
+        const second = refreshed.json<{
+            accessToken: string;
+            refreshToken: string;
+            expiresAt: string;
+        }>();
+
+        expect(second.accessToken).not.toBe(first.accessToken);
+        expect(second.refreshToken).not.toBe(first.refreshToken);
+
+        const oldAccessResult = await app!.inject({
+            method: "GET",
+            url: "/v1/auth/test",
+            headers: { authorization: `Bearer ${first.accessToken}` },
+        });
+        expect(oldAccessResult.statusCode).toBe(401);
+
+        const newAccessResult = await app!.inject({
+            method: "GET",
+            url: "/v1/auth/test",
+            headers: { authorization: `Bearer ${second.accessToken}` },
+        });
+        expect(newAccessResult.statusCode).toBe(200);
+
+        const replayRefresh = await app!.inject({
+            method: "POST",
+            url: "/v1/auth/refresh",
+            payload: {
+                refreshToken: first.refreshToken,
+            },
+        });
+        expect(replayRefresh.statusCode).toBe(401);
+    });
+
+    it("rejects signed device tokens that are not backed by a DB session", async () => {
+        const accessToken = jwt.sign(
+            {
+                sub: "dev_0123456789012345678901234567890123456789",
+                deviceId: `test-device-${randomUUID()}`,
+                platform: "android",
+                appVersion: "1.0.0",
+                tokenType: "device",
+            },
+            "test-secret",
+            { expiresIn: 3600 }
+        );
+
+        const response = await app!.inject({
+            method: "GET",
+            url: "/v1/auth/test",
+            headers: { authorization: `Bearer ${accessToken}` },
+        });
+
+        expect(response.statusCode).toBe(401);
     });
 
     it("returns required v3 flags with boolean values", async () => {

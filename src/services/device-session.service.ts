@@ -1,6 +1,10 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import jwt from "jsonwebtoken";
-import { insertDeviceSession } from "../repositories/device-session.repository.js";
+import {
+    findActiveSessionByRefreshTokenHash,
+    insertDeviceSession,
+    rotateSessionTokens,
+} from "../repositories/device-session.repository.js";
 
 type CreateDeviceSessionInput = {
     deviceId: string;
@@ -32,6 +36,11 @@ function getAccessTtlSeconds(): number {
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : 86400;
 }
 
+function getRefreshTtlSeconds(): number {
+    const value = Number(process.env.DEVICE_REFRESH_TOKEN_TTL_SECONDS || 2592000);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 2592000;
+}
+
 function deriveSubjectId(deviceId: string, secret: string): string {
     const digest = createHmac("sha256", secret)
         .update(`device:${deviceId}`)
@@ -39,40 +48,129 @@ function deriveSubjectId(deviceId: string, secret: string): string {
     return `dev_${digest.slice(0, 40)}`;
 }
 
-export async function createDeviceSession(
-    input: CreateDeviceSessionInput
-): Promise<DeviceSessionResponse> {
-    const secret = getJwtSecret();
-    const subjectId = deriveSubjectId(input.deviceId, secret);
-    const accessTtlSeconds = getAccessTtlSeconds();
-    const expiresAt = new Date(Date.now() + accessTtlSeconds * 1000);
-    const refreshToken = randomBytes(32).toString("hex");
-
-    const accessToken = jwt.sign(
+function issueAccessToken(input: {
+    secret: string;
+    subjectId: string;
+    deviceId: string;
+    platform: string;
+    appVersion: string;
+    accessTtlSeconds: number;
+}): string {
+    const jti = randomBytes(12).toString("hex");
+    return jwt.sign(
         {
-            sub: subjectId,
+            sub: input.subjectId,
             deviceId: input.deviceId,
             platform: input.platform,
             appVersion: input.appVersion,
             tokenType: "device",
+            jti,
         },
-        secret,
-        { expiresIn: accessTtlSeconds }
+        input.secret,
+        { expiresIn: input.accessTtlSeconds }
     );
+}
 
-    await insertDeviceSession({
+function buildTokenPair(input: {
+    secret: string;
+    subjectId: string;
+    deviceId: string;
+    platform: string;
+    appVersion: string;
+}): {
+    accessToken: string;
+    refreshToken: string;
+    accessExpiresAt: Date;
+    sessionExpiresAt: Date;
+} {
+    const accessTtlSeconds = getAccessTtlSeconds();
+    const refreshTtlSeconds = getRefreshTtlSeconds();
+
+    const accessExpiresAt = new Date(Date.now() + accessTtlSeconds * 1000);
+    const sessionExpiresAt = new Date(Date.now() + refreshTtlSeconds * 1000);
+    const refreshToken = randomBytes(32).toString("hex");
+
+    const accessToken = issueAccessToken({
+        secret: input.secret,
+        subjectId: input.subjectId,
         deviceId: input.deviceId,
         platform: input.platform,
         appVersion: input.appVersion,
-        accessTokenHash: hashToken(accessToken),
-        refreshTokenHash: hashToken(refreshToken),
-        expiresAt,
+        accessTtlSeconds,
     });
 
     return {
         accessToken,
         refreshToken,
-        expiresAt: expiresAt.toISOString(),
+        accessExpiresAt,
+        sessionExpiresAt,
+    };
+}
+
+export async function createDeviceSession(
+    input: CreateDeviceSessionInput
+): Promise<DeviceSessionResponse> {
+    const secret = getJwtSecret();
+    const subjectId = deriveSubjectId(input.deviceId, secret);
+
+    const tokenPair = buildTokenPair({
+        secret,
+        subjectId,
+        deviceId: input.deviceId,
+        platform: input.platform,
+        appVersion: input.appVersion,
+    });
+
+    await insertDeviceSession({
+        deviceId: input.deviceId,
+        platform: input.platform,
+        appVersion: input.appVersion,
+        accessTokenHash: hashToken(tokenPair.accessToken),
+        refreshTokenHash: hashToken(tokenPair.refreshToken),
+        expiresAt: tokenPair.sessionExpiresAt,
+    });
+
+    return {
+        accessToken: tokenPair.accessToken,
+        refreshToken: tokenPair.refreshToken,
+        expiresAt: tokenPair.accessExpiresAt.toISOString(),
+        userIdOrDeviceId: subjectId,
+    };
+}
+
+export async function refreshDeviceSession(input: {
+    refreshToken: string;
+}): Promise<DeviceSessionResponse> {
+    const secret = getJwtSecret();
+    const session = await findActiveSessionByRefreshTokenHash(
+        hashToken(input.refreshToken)
+    );
+
+    if (!session) {
+        throw new Error("Invalid or expired refresh token");
+    }
+
+    const subjectId = deriveSubjectId(session.deviceId, secret);
+
+    const tokenPair = buildTokenPair({
+        secret,
+        subjectId,
+        deviceId: session.deviceId,
+        platform: session.platform,
+        appVersion: session.appVersion || "unknown",
+    });
+
+    await rotateSessionTokens({
+        sessionId: session.id,
+        accessTokenHash: hashToken(tokenPair.accessToken),
+        refreshTokenHash: hashToken(tokenPair.refreshToken),
+        expiresAt: tokenPair.sessionExpiresAt,
+    });
+
+    return {
+        accessToken: tokenPair.accessToken,
+        refreshToken: tokenPair.refreshToken,
+        expiresAt: tokenPair.accessExpiresAt.toISOString(),
         userIdOrDeviceId: subjectId,
     };
 }

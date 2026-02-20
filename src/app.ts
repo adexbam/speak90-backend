@@ -8,7 +8,6 @@ import { registerRoutes } from "./config/routes.js";
 import securityPlugins from "./config/security.js";
 import { closeDb, initializeDb } from "./db/client.js";
 import { authenticate } from "./middleware/authMiddleware.js";
-import jwtPlugin from "./utils/jwt.js";
 import { logEvent } from "./utils/logger.js";
 
 export interface AppConfig {
@@ -67,7 +66,6 @@ export async function App(config: AppConfig = {}) {
     registerErrorHandler(app);
     registerRequestLogger(app);
     await app.register(securityPlugins);
-    await app.register(jwtPlugin);
 
     app.addHook("preHandler", async (request, reply) => {
         const currentRoute = request.routeOptions?.url;
@@ -77,8 +75,7 @@ export async function App(config: AppConfig = {}) {
         }
 
         const routeConfig = request.routeOptions?.config || {};
-        const requiresAuth =
-            routeConfig.auth === true || routeConfig.public === false;
+        const requiresAuth = routeConfig.public !== true;
 
         if (requiresAuth) {
             await authenticate(request, reply);

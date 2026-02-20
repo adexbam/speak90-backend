@@ -1,10 +1,17 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { createDeviceSession } from "../../services/device-session.service.js";
+import {
+    createDeviceSession,
+    refreshDeviceSession,
+} from "../../services/device-session.service.js";
 
 type CreateDeviceSessionBody = {
     deviceId: string;
     platform: string;
     appVersion: string;
+};
+
+type RefreshDeviceSessionBody = {
+    refreshToken: string;
 };
 
 export async function createDeviceSessionHandler(
@@ -14,4 +21,21 @@ export async function createDeviceSessionHandler(
     const session = await createDeviceSession(request.body);
     reply.code(201);
     return session;
+}
+
+export async function refreshDeviceSessionHandler(
+    request: FastifyRequest<{ Body: RefreshDeviceSessionBody }>,
+    reply: FastifyReply
+) {
+    try {
+        const session = await refreshDeviceSession({
+            refreshToken: request.body.refreshToken,
+        });
+        reply.code(200);
+        return session;
+    } catch {
+        throw request.server.httpErrors.unauthorized(
+            "Invalid or expired refresh token"
+        );
+    }
 }

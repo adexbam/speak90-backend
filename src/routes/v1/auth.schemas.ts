@@ -29,3 +29,33 @@ export const createDeviceSessionSchema = {
         },
     },
 } as const;
+
+export const refreshDeviceSessionSchema = {
+    tags: ["Auth"],
+    summary: "Refresh a device session token pair",
+    body: {
+        type: "object",
+        additionalProperties: false,
+        required: ["refreshToken"],
+        properties: {
+            refreshToken: { type: "string", minLength: 1 },
+        },
+    },
+    response: {
+        200: {
+            type: "object",
+            required: [
+                "accessToken",
+                "refreshToken",
+                "expiresAt",
+                "userIdOrDeviceId",
+            ],
+            properties: {
+                accessToken: { type: "string" },
+                refreshToken: { type: "string" },
+                expiresAt: { type: "string", format: "date-time" },
+                userIdOrDeviceId: { type: "string" },
+            },
+        },
+    },
+} as const;
