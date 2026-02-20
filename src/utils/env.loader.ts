@@ -104,7 +104,7 @@ async function getEnvParamKeys(nodeEnv?: string) {
 
     // election-controller params
     const appKeys = ENV_CONFIG.ssmKeys.map(
-        (k: string) => `/${env}/content-delegation-backend/${k}`
+        (k: string) => `/${env}/speak90-backend/${k}`
     );
 
     // other project keys

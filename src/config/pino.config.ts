@@ -1,7 +1,7 @@
 import pino, { type LoggerOptions } from "pino";
 import { getRequestContext } from "../utils/request-context.js";
 
-const SERVICE_NAME = process.env.SERVICE_NAME || "content-delegation-backend";
+const SERVICE_NAME = process.env.SERVICE_NAME || "speak90-backend";
 const VERSION = process.env.APP_VERSION || "1.0.0";
 
 function getBaseConfig(): LoggerOptions {
