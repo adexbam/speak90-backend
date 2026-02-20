@@ -5,8 +5,13 @@ import {
     insertRetentionJob,
     listPurgeCandidates,
     listRecordingUploads,
+    markUploadDeleting,
     markUploadDeleted,
+    markUploadsDeleting,
     markUploadsDeleted,
+    recoverStuckDeletingUploads,
+    restoreUploadToUploaded,
+    restoreUploadsToUploaded,
 } from "../repositories/audio-upload.repository.js";
 import { deleteFileFromS3 } from "../repositories/upload.repository.js";
 import { readAudioCloudConsent } from "./consent.service.js";
@@ -20,6 +25,7 @@ import {
 const DEFAULT_RETENTION_DAYS = 90;
 const MIN_RETENTION_DAYS = 1;
 const MAX_RETENTION_DAYS = 3650;
+const DEFAULT_RECONCILE_MINUTES = 30;
 
 type UploadAudioInput = {
     subjectId: string;
@@ -114,7 +120,32 @@ export async function uploadAudioRecording(
 }
 
 export async function getAudioRecordingList(subjectId: string) {
+    await reconcileDeletingUploads({ subjectId }).catch(() => undefined);
     return listRecordingUploads(subjectId);
+}
+
+export async function reconcileDeletingUploads(params?: {
+    subjectId?: string;
+    olderThanMinutes?: number;
+}): Promise<number> {
+    const olderThanMinutes =
+        params?.olderThanMinutes ?? DEFAULT_RECONCILE_MINUTES;
+    const recovered = await recoverStuckDeletingUploads({
+        subjectId: params?.subjectId,
+        olderThanMinutes,
+    });
+    if (recovered > 0) {
+        const now = new Date().toISOString();
+        await insertRetentionJob({
+            jobType: "audio_uploads_reconcile",
+            startedAt: now,
+            finishedAt: now,
+            deletedCount: 0,
+            status: "succeeded",
+            errorMessage: `Recovered ${recovered} stuck deleting rows`,
+        }).catch(() => undefined);
+    }
+    return recovered;
 }
 
 export async function deleteAudioRecording(params: {
@@ -128,12 +159,24 @@ export async function deleteAudioRecording(params: {
         throw request.server.httpErrors.notFound("Upload not found");
     }
 
+    const transitioned = await markUploadDeleting(subjectId, uploadId);
+    if (!transitioned) {
+        throw request.server.httpErrors.notFound("Upload not found");
+    }
     const { bucketName } = ensureUploadConfig();
-    await deleteFileFromS3({
-        bucket: bucketName,
-        key: upload.storageKey,
-    });
-    await markUploadDeleted(subjectId, uploadId);
+    try {
+        await deleteFileFromS3({
+            bucket: bucketName,
+            key: upload.storageKey,
+        });
+        const finalized = await markUploadDeleted(subjectId, uploadId);
+        if (!finalized) {
+            throw new Error("Failed to finalize upload deletion state");
+        }
+    } catch (error) {
+        await restoreUploadToUploaded(subjectId, uploadId).catch(() => undefined);
+        throw error;
+    }
     return { uploadId, deletedAt: new Date().toISOString() };
 }
 
@@ -147,33 +190,54 @@ export async function purgeAudioRecordings(params: {
         MAX_RETENTION_DAYS,
         Math.max(MIN_RETENTION_DAYS, params.retentionDays ?? DEFAULT_RETENTION_DAYS)
     );
+    await reconcileDeletingUploads({ subjectId: params.subjectId }).catch(
+        () => undefined
+    );
 
     try {
         const candidates = await listPurgeCandidates({
             subjectId: params.subjectId,
             retentionDays,
         });
+        const candidateIds = candidates.map((c) => c.uploadId);
+        const deletingIds = new Set(await markUploadsDeleting(candidateIds));
+
+        const deletedIds: string[] = [];
+        const failedIds: string[] = [];
         if (candidates.length > 0) {
             const { bucketName } = ensureUploadConfig();
             for (const candidate of candidates) {
-                await deleteFileFromS3({
-                    bucket: bucketName,
-                    key: candidate.storageKey,
-                });
+                if (!deletingIds.has(candidate.uploadId)) {
+                    continue;
+                }
+                try {
+                    await deleteFileFromS3({
+                        bucket: bucketName,
+                        key: candidate.storageKey,
+                    });
+                    deletedIds.push(candidate.uploadId);
+                } catch {
+                    failedIds.push(candidate.uploadId);
+                }
             }
         }
 
-        await markUploadsDeleted(candidates.map((c) => c.uploadId));
+        await markUploadsDeleted(deletedIds);
+        await restoreUploadsToUploaded(failedIds);
         const executedAt = new Date().toISOString();
         await insertRetentionJob({
             jobType: "audio_uploads_purge",
             startedAt,
             finishedAt: executedAt,
-            deletedCount: candidates.length,
-            status: "succeeded",
+            deletedCount: deletedIds.length,
+            status: failedIds.length === 0 ? "succeeded" : "failed",
+            errorMessage:
+                failedIds.length === 0
+                    ? undefined
+                    : `${failedIds.length} object deletions failed`,
         });
         return {
-            deletedCount: candidates.length,
+            deletedCount: deletedIds.length,
             retentionDays,
             executedAt,
         };

@@ -4,6 +4,8 @@ import {
     InvalidRefreshTokenError,
     refreshDeviceSession,
 } from "../../services/device-session.service.js";
+import { ERROR_CODES } from "../../utils/error-codes.js";
+import { httpError } from "../../utils/http-errors.js";
 
 type CreateDeviceSessionBody = {
     deviceId: string;
@@ -36,7 +38,12 @@ export async function refreshDeviceSessionHandler(
         return session;
     } catch (error) {
         if (error instanceof InvalidRefreshTokenError) {
-            throw request.server.httpErrors.unauthorized(error.message);
+            throw httpError(
+                request,
+                "unauthorized",
+                error.message,
+                ERROR_CODES.authInvalidRefresh
+            );
         }
         throw error;
     }

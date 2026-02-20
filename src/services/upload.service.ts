@@ -1,4 +1,5 @@
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import type { FastifyRequest } from "fastify";
 import { uploadFileToS3 } from "../repositories/upload.repository.js";
 
@@ -42,8 +43,9 @@ export async function toFileBuffer(file: UploadFileLike): Promise<Buffer> {
 
 export function buildS3Key(filename: string, folder?: string) {
     const timestamp = Date.now();
+    const uniqueSuffix = randomUUID().slice(0, 8);
     const ext = path.extname(filename || "") || "";
-    const safeFileName = `${timestamp}${ext}`;
+    const safeFileName = `${timestamp}-${uniqueSuffix}${ext}`;
     const normalizedFolder = folder
         ? folder.replace(/^\/+|\/+$/g, "")
         : "speak90";

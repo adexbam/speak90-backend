@@ -157,16 +157,53 @@ export async function findUploadById(
 export async function markUploadDeleted(
     subjectId: string,
     uploadId: string
-): Promise<void> {
+): Promise<boolean> {
     const pool = getDbPool();
-    await pool.query(
+    const result = await pool.query(
         `
         UPDATE recording_uploads
-        SET status = 'deleted', expires_at = NOW()
-        WHERE subject_id = $1 AND id = $2
+        SET status = 'deleted',
+            expires_at = NOW(),
+            deleting_started_at = NULL
+        WHERE subject_id = $1 AND id = $2 AND status = 'deleting'
         `,
         [subjectId, uploadId]
     );
+    return (result.rowCount ?? 0) === 1;
+}
+
+export async function markUploadDeleting(
+    subjectId: string,
+    uploadId: string
+): Promise<boolean> {
+    const pool = getDbPool();
+    const result = await pool.query(
+        `
+        UPDATE recording_uploads
+        SET status = 'deleting',
+            deleting_started_at = NOW()
+        WHERE subject_id = $1 AND id = $2 AND status = 'uploaded'
+        `,
+        [subjectId, uploadId]
+    );
+    return (result.rowCount ?? 0) === 1;
+}
+
+export async function restoreUploadToUploaded(
+    subjectId: string,
+    uploadId: string
+): Promise<boolean> {
+    const pool = getDbPool();
+    const result = await pool.query(
+        `
+        UPDATE recording_uploads
+        SET status = 'uploaded',
+            deleting_started_at = NULL
+        WHERE subject_id = $1 AND id = $2 AND status = 'deleting'
+        `,
+        [subjectId, uploadId]
+    );
+    return (result.rowCount ?? 0) === 1;
 }
 
 export async function listPurgeCandidates(params: {
@@ -203,20 +240,62 @@ export async function listPurgeCandidates(params: {
     }));
 }
 
-export async function markUploadsDeleted(uploadIds: string[]): Promise<void> {
+export async function markUploadsDeleted(uploadIds: string[]): Promise<number> {
     if (uploadIds.length === 0) {
-        return;
+        return 0;
     }
 
     const pool = getDbPool();
-    await pool.query(
+    const result = await pool.query(
         `
         UPDATE recording_uploads
-        SET status = 'deleted', expires_at = NOW()
-        WHERE id = ANY($1::uuid[])
+        SET status = 'deleted',
+            expires_at = NOW(),
+            deleting_started_at = NULL
+        WHERE id = ANY($1::uuid[]) AND status = 'deleting'
         `,
         [uploadIds]
     );
+    return result.rowCount ?? 0;
+}
+
+export async function markUploadsDeleting(uploadIds: string[]): Promise<string[]> {
+    if (uploadIds.length === 0) {
+        return [];
+    }
+
+    const pool = getDbPool();
+    const result = await pool.query<{ id: string }>(
+        `
+        UPDATE recording_uploads
+        SET status = 'deleting',
+            deleting_started_at = NOW()
+        WHERE id = ANY($1::uuid[]) AND status = 'uploaded'
+        RETURNING id
+        `,
+        [uploadIds]
+    );
+    return result.rows.map((row) => row.id);
+}
+
+export async function restoreUploadsToUploaded(
+    uploadIds: string[]
+): Promise<number> {
+    if (uploadIds.length === 0) {
+        return 0;
+    }
+
+    const pool = getDbPool();
+    const result = await pool.query(
+        `
+        UPDATE recording_uploads
+        SET status = 'uploaded',
+            deleting_started_at = NULL
+        WHERE id = ANY($1::uuid[]) AND status = 'deleting'
+        `,
+        [uploadIds]
+    );
+    return result.rowCount ?? 0;
 }
 
 export async function insertRetentionJob(params: {
@@ -249,4 +328,26 @@ export async function insertRetentionJob(params: {
             params.errorMessage ?? null,
         ]
     );
+}
+
+export async function recoverStuckDeletingUploads(params: {
+    olderThanMinutes: number;
+    subjectId?: string;
+}): Promise<number> {
+    const pool = getDbPool();
+    const hasSubjectFilter = typeof params.subjectId === "string";
+    const result = await pool.query(
+        `
+        UPDATE recording_uploads
+        SET status = 'uploaded',
+            deleting_started_at = NULL
+        WHERE status = 'deleting'
+          AND COALESCE(deleting_started_at, uploaded_at) <= NOW() - ($1::int * INTERVAL '1 minute')
+          ${hasSubjectFilter ? "AND subject_id = $2" : ""}
+        `,
+        hasSubjectFilter
+            ? [params.olderThanMinutes, params.subjectId]
+            : [params.olderThanMinutes]
+    );
+    return result.rowCount || 0;
 }
