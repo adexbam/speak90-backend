@@ -193,4 +193,77 @@ describe.skipIf(!runDbIntegration)("Ticket 30.1 auth + config endpoints", () => 
         expect(get.statusCode).toBe(200);
         expect(get.json()).toEqual({ enabled: true, retentionDays: 120 });
     });
+
+    it("rejects audio upload list when consent/backup requirements are not met", async () => {
+        const deviceId = `test-device-${randomUUID()}`;
+        const auth = await app!.inject({
+            method: "POST",
+            url: "/v1/auth/device-session",
+            payload: {
+                deviceId,
+                platform: "ios",
+                appVersion: "1.1.0",
+            },
+        });
+        const authBody = auth.json<{ accessToken: string }>();
+
+        const blocked = await app!.inject({
+            method: "GET",
+            url: "/v1/audio/uploads",
+            headers: {
+                authorization: `Bearer ${authBody.accessToken}`,
+            },
+        });
+
+        expect(blocked.statusCode).toBe(403);
+    });
+
+    it("returns audio upload list when consent is granted and backup is enabled", async () => {
+        const deviceId = `test-device-${randomUUID()}`;
+        const auth = await app!.inject({
+            method: "POST",
+            url: "/v1/auth/device-session",
+            payload: {
+                deviceId,
+                platform: "android",
+                appVersion: "1.1.1",
+            },
+        });
+        const authBody = auth.json<{ accessToken: string }>();
+
+        await app!.inject({
+            method: "POST",
+            url: "/v1/consents/audio-cloud",
+            headers: {
+                authorization: `Bearer ${authBody.accessToken}`,
+            },
+            payload: {
+                decision: "granted",
+                decidedAt: new Date().toISOString(),
+                policyVersion: "2026-02-19",
+            },
+        });
+
+        await app!.inject({
+            method: "PUT",
+            url: "/v1/user/settings/backup",
+            headers: {
+                authorization: `Bearer ${authBody.accessToken}`,
+            },
+            payload: {
+                enabled: true,
+            },
+        });
+
+        const response = await app!.inject({
+            method: "GET",
+            url: "/v1/audio/uploads",
+            headers: {
+                authorization: `Bearer ${authBody.accessToken}`,
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(Array.isArray(response.json())).toBe(true);
+    });
 });

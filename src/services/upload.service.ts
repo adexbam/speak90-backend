@@ -14,7 +14,10 @@ export async function getFileFromRequest(
 ): Promise<UploadFileLike | null> {
     const body = request.body as any;
     const fileFromBody = body?.file;
-    return (await request.file()) || fileFromBody || null;
+    if (fileFromBody) {
+        return fileFromBody;
+    }
+    return (await request.file()) || null;
 }
 
 export function ensureUploadConfig() {
