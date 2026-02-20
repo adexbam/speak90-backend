@@ -1,11 +1,15 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import {
     assertAudioCloudAccess,
+    deleteAudioRecording,
     getAudioRecordingList,
+    purgeAudioRecordings,
     uploadAudioRecording,
 } from "../../services/audio-upload.service.js";
 
 type UploadBody = Record<string, unknown>;
+type PurgeBody = { retentionDays?: number };
+type DeleteParams = { uploadId: string };
 
 function requireSubjectId(request: FastifyRequest): string {
     const subjectId = (request.user as { sub?: string } | undefined)?.sub;
@@ -40,7 +44,8 @@ function parseRequiredString(
 function parseRequiredInteger(
     request: FastifyRequest,
     body: UploadBody,
-    fieldName: string
+    fieldName: string,
+    min?: number
 ): number {
     const raw = getMultipartField(body, fieldName);
     const parsed =
@@ -54,13 +59,20 @@ function parseRequiredInteger(
             `${fieldName} is required and must be an integer`
         );
     }
+    if (typeof min === "number" && parsed < min) {
+        throw request.server.httpErrors.badRequest(
+            `${fieldName} must be >= ${min}`
+        );
+    }
     return parsed;
 }
 
 function parseOptionalInteger(
     request: FastifyRequest,
     body: UploadBody,
-    fieldName: string
+    fieldName: string,
+    min?: number,
+    max?: number
 ): number | undefined {
     const raw = getMultipartField(body, fieldName);
     if (raw === undefined || raw === null || raw === "") {
@@ -77,6 +89,16 @@ function parseOptionalInteger(
             `${fieldName} must be an integer`
         );
     }
+    if (typeof min === "number" && parsed < min) {
+        throw request.server.httpErrors.badRequest(
+            `${fieldName} must be >= ${min}`
+        );
+    }
+    if (typeof max === "number" && parsed > max) {
+        throw request.server.httpErrors.badRequest(
+            `${fieldName} must be <= ${max}`
+        );
+    }
     return parsed;
 }
 
@@ -91,7 +113,19 @@ function parseRequiredDateTime(
             `${fieldName} must be an ISO date-time string`
         );
     }
-    return new Date(value).toISOString();
+    const parsed = new Date(value);
+    const now = Date.now();
+    if (parsed.getTime() > now + 5 * 60 * 1000) {
+        throw request.server.httpErrors.badRequest(
+            `${fieldName} must not be in the far future`
+        );
+    }
+    if (parsed.getUTCFullYear() < 2010) {
+        throw request.server.httpErrors.badRequest(
+            `${fieldName} is outside allowed range`
+        );
+    }
+    return parsed.toISOString();
 }
 
 export async function postAudioUploadHandler(
@@ -104,12 +138,12 @@ export async function postAudioUploadHandler(
 
     const upload = await uploadAudioRecording(request, {
         subjectId,
-        dayNumber: parseRequiredInteger(request, body, "dayNumber"),
+        dayNumber: parseRequiredInteger(request, body, "dayNumber", 1),
         sectionId: parseRequiredString(request, body, "sectionId"),
         createdAt: parseRequiredDateTime(request, body, "createdAt"),
-        durationMs: parseRequiredInteger(request, body, "durationMs"),
+        durationMs: parseRequiredInteger(request, body, "durationMs", 1),
         retentionDays:
-            parseOptionalInteger(request, body, "retentionDays") ??
+            parseOptionalInteger(request, body, "retentionDays", 1, 3650) ??
             access.retentionDays,
     });
 
@@ -126,4 +160,34 @@ export async function getAudioUploadsHandler(
     const uploads = await getAudioRecordingList(subjectId);
     reply.code(200);
     return uploads;
+}
+
+export async function deleteAudioUploadHandler(
+    request: FastifyRequest<{ Params: DeleteParams }>,
+    reply: FastifyReply
+) {
+    const subjectId = requireSubjectId(request);
+    await assertAudioCloudAccess(request, subjectId);
+    const result = await deleteAudioRecording({
+        request,
+        subjectId,
+        uploadId: request.params.uploadId,
+    });
+    reply.code(200);
+    return result;
+}
+
+export async function purgeAudioUploadsHandler(
+    request: FastifyRequest<{ Body: PurgeBody }>,
+    reply: FastifyReply
+) {
+    const subjectId = requireSubjectId(request);
+    await assertAudioCloudAccess(request, subjectId);
+    const result = await purgeAudioRecordings({
+        request,
+        subjectId,
+        retentionDays: request.body?.retentionDays,
+    });
+    reply.code(200);
+    return result;
 }

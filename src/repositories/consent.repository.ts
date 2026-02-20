@@ -9,7 +9,7 @@ export type AudioCloudConsent = {
 export async function createAudioCloudConsent(params: {
     subjectId: string;
     decision: "granted" | "denied";
-    decidedAt: string;
+    decidedAtClient: string;
     policyVersion: string;
 }): Promise<AudioCloudConsent> {
     const pool = getDbPool();
@@ -19,15 +19,22 @@ export async function createAudioCloudConsent(params: {
         policy_version: string;
     }>(
         `
-        INSERT INTO user_consents (subject_id, consent_type, decision, policy_version, decided_at)
-        VALUES ($1, 'audio_cloud', $2, $3, $4)
+        INSERT INTO user_consents (
+            subject_id,
+            consent_type,
+            decision,
+            policy_version,
+            decided_at,
+            decided_at_client
+        )
+        VALUES ($1, 'audio_cloud', $2, $3, NOW(), $4)
         RETURNING decision, decided_at, policy_version
         `,
         [
             params.subjectId,
             params.decision,
             params.policyVersion,
-            params.decidedAt,
+            params.decidedAtClient,
         ]
     );
 

@@ -24,15 +24,20 @@ export async function registerRoutes(app: FastifyInstance) {
     // Application routes
     await app.register(healthRoutes, { prefix: "/" });
     await app.register(upLoadRoutes, {
-        prefix: "api/v1/upload",
+        prefix: "/v1/upload",
     });
-    await app.register(authRoutes, { prefix: "api/v1/auth" });
     await app.register(authRoutes, { prefix: "/v1/auth" });
     await app.register(audioUploadsRoutes, { prefix: "/v1/audio/uploads" });
     await app.register(configRoutes, { prefix: "/v1/config" });
     await app.register(consentRoutes, { prefix: "/v1/consents" });
     await app.register(progressRoutes, { prefix: "/v1/progress" });
     await app.register(userSettingsRoutes, { prefix: "/v1/user/settings" });
+
+    // Temporary legacy aliases (to be removed after client migration).
+    await app.register(upLoadRoutes, {
+        prefix: "/api/v1/upload",
+    });
+    await app.register(authRoutes, { prefix: "/api/v1/auth" });
 
     // API reference (Scalar routes are plugin-generated, so we mark them public here)
     app.addHook("onRoute", (route) => {

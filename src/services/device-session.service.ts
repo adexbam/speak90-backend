@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import jwt from "jsonwebtoken";
 import { insertDeviceSession } from "../repositories/device-session.repository.js";
 
@@ -32,17 +32,25 @@ function getAccessTtlSeconds(): number {
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : 86400;
 }
 
+function deriveSubjectId(deviceId: string, secret: string): string {
+    const digest = createHmac("sha256", secret)
+        .update(`device:${deviceId}`)
+        .digest("hex");
+    return `dev_${digest.slice(0, 40)}`;
+}
+
 export async function createDeviceSession(
     input: CreateDeviceSessionInput
 ): Promise<DeviceSessionResponse> {
     const secret = getJwtSecret();
+    const subjectId = deriveSubjectId(input.deviceId, secret);
     const accessTtlSeconds = getAccessTtlSeconds();
     const expiresAt = new Date(Date.now() + accessTtlSeconds * 1000);
     const refreshToken = randomBytes(32).toString("hex");
 
     const accessToken = jwt.sign(
         {
-            sub: input.deviceId,
+            sub: subjectId,
             deviceId: input.deviceId,
             platform: input.platform,
             appVersion: input.appVersion,
@@ -65,6 +73,6 @@ export async function createDeviceSession(
         accessToken,
         refreshToken,
         expiresAt: expiresAt.toISOString(),
-        userIdOrDeviceId: input.deviceId,
+        userIdOrDeviceId: subjectId,
     };
 }

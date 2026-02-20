@@ -14,7 +14,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     app.get(
         "/test",
-        { config: { public: false } },
+        { config: { auth: true } },
         async (request, _reply) => {
             return {
                 ok: true,

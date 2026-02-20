@@ -1,12 +1,16 @@
 import multipart from "@fastify/multipart";
 import type { FastifyInstance } from "fastify";
 import {
+    deleteAudioUploadHandler,
     getAudioUploadsHandler,
+    purgeAudioUploadsHandler,
     postAudioUploadHandler,
 } from "./audio-uploads.handlers.js";
 import {
+    deleteAudioUploadSchema,
     getAudioUploadsSchema,
     postAudioUploadSchema,
+    purgeAudioUploadsSchema,
 } from "./audio-uploads.schemas.js";
 
 export async function audioUploadsRoutes(app: FastifyInstance) {
@@ -31,5 +35,23 @@ export async function audioUploadsRoutes(app: FastifyInstance) {
             schema: getAudioUploadsSchema,
         },
         getAudioUploadsHandler
+    );
+
+    app.delete(
+        "/:uploadId",
+        {
+            config: { auth: true },
+            schema: deleteAudioUploadSchema,
+        },
+        deleteAudioUploadHandler
+    );
+
+    app.post(
+        "/purge",
+        {
+            config: { auth: true },
+            schema: purgeAudioUploadsSchema,
+        },
+        purgeAudioUploadsHandler
     );
 }

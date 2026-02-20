@@ -1,6 +1,6 @@
-export const upsertAudioCloudConsentSchema = {
+export const createAudioCloudConsentSchema = {
     tags: ["Consents"],
-    summary: "Upsert audio cloud consent",
+    summary: "Append audio cloud consent decision",
     body: {
         type: "object",
         additionalProperties: false,

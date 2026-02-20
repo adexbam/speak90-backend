@@ -1,4 +1,4 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 let s3Client: S3Client | undefined;
 
@@ -30,6 +30,23 @@ export async function uploadFileToS3(params: {
         Key: key,
         Body: body,
         ContentType: contentType,
+    });
+
+    await client.send(command);
+}
+
+export async function deleteFileFromS3(params: { bucket: string; key: string }) {
+    const { bucket, key } = params;
+    if (!bucket) {
+        throw new Error(
+            "[uploadRepository] Missing bucket name (S3_BUCKET not configured)"
+        );
+    }
+
+    const client = getS3Client();
+    const command = new DeleteObjectCommand({
+        Bucket: bucket,
+        Key: key,
     });
 
     await client.send(command);

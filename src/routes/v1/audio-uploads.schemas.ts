@@ -48,3 +48,48 @@ export const getAudioUploadsSchema = {
         },
     },
 } as const;
+
+export const deleteAudioUploadSchema = {
+    tags: ["AudioUploads"],
+    summary: "Delete a specific cloud upload",
+    params: {
+        type: "object",
+        required: ["uploadId"],
+        properties: {
+            uploadId: { type: "string", format: "uuid" },
+        },
+    },
+    response: {
+        200: {
+            type: "object",
+            required: ["uploadId", "deletedAt"],
+            properties: {
+                uploadId: { type: "string" },
+                deletedAt: { type: "string", format: "date-time" },
+            },
+        },
+    },
+} as const;
+
+export const purgeAudioUploadsSchema = {
+    tags: ["AudioUploads"],
+    summary: "Purge expired/retention-breaching uploads",
+    body: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+            retentionDays: { type: "integer", minimum: 1, maximum: 3650 },
+        },
+    },
+    response: {
+        200: {
+            type: "object",
+            required: ["deletedCount", "retentionDays", "executedAt"],
+            properties: {
+                deletedCount: { type: "integer" },
+                retentionDays: { type: "integer" },
+                executedAt: { type: "string", format: "date-time" },
+            },
+        },
+    },
+} as const;

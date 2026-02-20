@@ -12,15 +12,13 @@ export const authenticate = async (
     req: AuthRequest,
     reply: FastifyReply
 ) => {
-    const { token: bodyToken } = (req.body as any) || {};
     const token =
-        bodyToken ||
-        (typeof req.headers.authorization === "string"
+        typeof req.headers.authorization === "string"
             ? req.headers.authorization.split(" ")[1]
-            : undefined);
+            : undefined;
     if (!token) {
         return reply.status(401).send({
-            error: "Missing token in request body or Authorization header",
+            error: "Missing Bearer token in Authorization header",
         });
     }
 
@@ -72,16 +70,14 @@ export const authorize = (allowedGroups: string[] = []) => {
 export const authenticateAndAuthorize =
     (requiredGroups: string[] = []) =>
     async (req: AuthRequest, reply: FastifyReply) => {
-        const { token: bodyToken } = (req.body as any) || {};
         const token =
-            bodyToken ||
-            (typeof req.headers.authorization === "string"
+            typeof req.headers.authorization === "string"
                 ? req.headers.authorization.split(" ")[1]
-                : undefined);
+                : undefined;
 
         if (!token) {
             return reply.status(401).send({
-                error: "Missing token in request body or Authorization header",
+                error: "Missing Bearer token in Authorization header",
             });
         }
 

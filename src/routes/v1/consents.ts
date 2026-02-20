@@ -5,7 +5,7 @@ import {
 } from "./consents.handlers.js";
 import {
     getAudioCloudConsentSchema,
-    upsertAudioCloudConsentSchema,
+    createAudioCloudConsentSchema,
 } from "./consents.schemas.js";
 
 export async function consentRoutes(app: FastifyInstance) {
@@ -13,7 +13,7 @@ export async function consentRoutes(app: FastifyInstance) {
         "/audio-cloud",
         {
             config: { auth: true },
-            schema: upsertAudioCloudConsentSchema,
+            schema: createAudioCloudConsentSchema,
         },
         postAudioCloudConsentHandler
     );

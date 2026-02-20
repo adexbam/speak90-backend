@@ -76,7 +76,11 @@ export async function App(config: AppConfig = {}) {
             return;
         }
 
-        if (request.routeOptions?.config?.auth === true) {
+        const routeConfig = request.routeOptions?.config || {};
+        const requiresAuth =
+            routeConfig.auth === true || routeConfig.public === false;
+
+        if (requiresAuth) {
             await authenticate(request, reply);
         }
     });

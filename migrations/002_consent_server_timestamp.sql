@@ -1,0 +1,2 @@
+ALTER TABLE user_consents
+ADD COLUMN IF NOT EXISTS decided_at_client TIMESTAMPTZ NULL;
