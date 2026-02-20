@@ -1,7 +1,7 @@
 {
 	"name": "speak90-backend",
 	"version": "1.0.0",
-	"description": "Content Delegation Backend API",
+	"description": "Speak90 Backend API",
 	"main": "index.js",
 	"scripts": {
 		"dev": "tsx watch src/server.ts",
@@ -36,12 +36,14 @@
 		"dotenv": "^17.2.1",
 		"fastify": "^5.5.0",
 		"fastify-plugin": "^5.0.1",
-		"jsonwebtoken": "^9.0.2"
+		"jsonwebtoken": "^9.0.2",
+		"pg": "^8.18.0"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.1.4",
 		"@types/jsonwebtoken": "^9.0.10",
 		"@types/node": "^24.2.1",
+		"@types/pg": "^8.16.0",
 		"pino-pretty": "^13.1.1",
 		"tsx": "^4.20.4",
 		"typescript": "^5.9.2",

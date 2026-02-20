@@ -1,15 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import {
+    dbHealthHandler,
     faviconHandler,
     healthcheckHandler,
     rootHandler,
 } from "./health.handlers.js";
 
 export async function healthRoutes(app: FastifyInstance) {
-    // Handle root path
     app.get("/", { config: { public: true } }, rootHandler);
-
-    // Handle favicon.ico to prevent authentication errors and logs
     app.get("/favicon.ico", { config: { public: true } }, faviconHandler);
 
     app.get(
@@ -25,4 +23,16 @@ export async function healthRoutes(app: FastifyInstance) {
         healthcheckHandler
     );
 
+    app.get(
+        "/health/db",
+        {
+            config: { public: true },
+            schema: {
+                tags: ["Health"],
+                summary: "Database health check",
+                description: "Check if the PostgreSQL connection is healthy",
+            },
+        },
+        dbHealthHandler
+    );
 }
