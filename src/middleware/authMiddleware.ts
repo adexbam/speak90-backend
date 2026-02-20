@@ -132,51 +132,24 @@ export const authorize = (allowedGroups: string[] = []) => {
 export const authenticateAndAuthorize =
     (requiredGroups: string[] = []) =>
     async (req: AuthRequest, reply: FastifyReply) => {
-        const token = parseBearerToken(req.headers.authorization);
-
-        if (!token) {
-            return reply.status(401).send({
-                error: "Missing Bearer token in Authorization header",
-            });
+        await authenticate(req, reply);
+        if (reply.sent) {
+            return;
         }
 
-        try {
-            const secret = process.env.JWT_SECRET;
-            if (!secret) {
-                return reply.status(500).send({
-                    error: "JWT_SECRET is not configured",
-                });
-            }
-            const decoded = jwt.verify(token, secret);
+        const userGroups = Array.isArray((req.user as any)?.groups)
+            ? (req.user as any).groups
+            : [];
 
-            const userGroups = Array.isArray((decoded as any).groups)
-                ? (decoded as any).groups
-                : [];
+        const hasPermission = requiredGroups.some((group) =>
+            userGroups.includes(group)
+        );
 
-            const hasPermission = requiredGroups.some((group) =>
-                userGroups.includes(group)
-            );
-
-            if (!hasPermission) {
-                return reply.status(403).send({
-                    error: "Insufficient permissions: group membership required",
-                    requiredGroups,
-                    userGroups,
-                });
-            }
-
-            req.user = decoded;
-        } catch (err) {
-            logger.error(
-                {
-                    err,
-                    event: "auth.token_verification.failed",
-                    data: { token_present: true },
-                },
-                "Token validation failed"
-            );
-            return reply.status(401).send({
-                error: "Unauthorized: invalid or expired token",
+        if (!hasPermission) {
+            return reply.status(403).send({
+                error: "Insufficient permissions: group membership required",
+                requiredGroups,
+                userGroups,
             });
         }
     };
