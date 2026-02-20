@@ -7,15 +7,11 @@ import { getLoggerConfig, pinoDestination } from "./config/pino.config.js";
 import { registerRequestLogger } from "./config/request.logger.js";
 import { registerRoutes } from "./config/routes.js";
 import securityPlugins from "./config/security.js";
-import { closeDb, initializeDb } from "./db/client.js";
-import { loadAllEnvConfig } from "./utils/env.loader.js";
 import jwtPlugin from "./utils/jwt.js";
-import { logEvent } from "./utils/logger.js";
 import { authenticate } from "./middleware/authMiddleware.js";
 
 export interface AppConfig {
     deploymentEnv?: string;
-    mongoUri?: string;
     jwtSecret?: string;
 }
 
@@ -52,45 +48,8 @@ export async function App(config: AppConfig = {}) {
                   disableRequestLogging: true,
               });
 
-    // Load environment configuration from SSM (for non-local environments)
-    // SSM/env is the source of truth outside of tests.
-    if (env === "test") {
-        if (!config.mongoUri) {
-            throw new Error(
-                "App(config) in test requires mongoUri to avoid real DB usage"
-            );
-        }
-        if (config.mongoUri) {
-            process.env.MONGO_URI_RW = config.mongoUri;
-        }
-        if (config.jwtSecret) {
-            process.env.JWT_SECRET = config.jwtSecret;
-        }
-    }
-
-    await loadAllEnvConfig(env);
-
-    // Initialize database connection after loading environment variables
-    try {
-        await initializeDb();
-        app.addHook("onClose", async () => {
-            await closeDb();
-        });
-    } catch (error) {
-        logEvent(
-            app.log,
-            "app.start.failed",
-            {
-                data: { step: "db.init" },
-                error: {
-                    type: error instanceof Error ? error.name : "Error",
-                    message: error instanceof Error ? error.message : String(error),
-                    stack: error instanceof Error ? error.stack : undefined,
-                },
-            },
-            "Failed to initialize database"
-        );
-        throw error;
+    if (env === "test" && config.jwtSecret) {
+        process.env.JWT_SECRET = config.jwtSecret;
     }
 
     // Register plugins in optimal order

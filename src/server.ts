@@ -16,7 +16,6 @@ if (Number.isNaN(port)) {
 
 const app = await App({
     deploymentEnv: process.env.DEPLOYMENT_ENV,
-    mongoUri: process.env.MONGO_URI_RW,
     jwtSecret: process.env.JWT_SECRET,
 });
 

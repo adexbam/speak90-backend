@@ -43,7 +43,7 @@ export function buildS3Key(filename: string, folder?: string) {
     const safeFileName = `${timestamp}${ext}`;
     const normalizedFolder = folder
         ? folder.replace(/^\/+|\/+$/g, "")
-        : "content_delegation";
+        : "speak90";
     const s3Key = `${normalizedFolder}/${safeFileName}`;
     return { s3Key, filename: safeFileName };
 }
