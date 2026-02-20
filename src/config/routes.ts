@@ -2,6 +2,7 @@ import swagger from "@fastify/swagger";
 import type { FastifyInstance } from "fastify";
 import { healthRoutes } from "../routes/v1/health/health.js";
 import { authRoutes } from "../routes/v1/auth.js";
+import { configRoutes } from "../routes/v1/config.js";
 import { scalarOptions, swaggerOptions } from "./api-docs.config.js";
 import { upLoadRoutes } from "../routes/v1/upload/upload.js";
 
@@ -22,6 +23,8 @@ export async function registerRoutes(app: FastifyInstance) {
         prefix: "api/v1/upload",
     });
     await app.register(authRoutes, { prefix: "api/v1/auth" });
+    await app.register(authRoutes, { prefix: "/v1/auth" });
+    await app.register(configRoutes, { prefix: "/v1/config" });
 
     // API reference (Scalar routes are plugin-generated, so we mark them public here)
     app.addHook("onRoute", (route) => {
