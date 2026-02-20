@@ -6,6 +6,8 @@ import { audioUploadsRoutes } from "../routes/v1/audio-uploads.js";
 import { configRoutes } from "../routes/v1/config.js";
 import { consentRoutes } from "../routes/v1/consents.js";
 import { progressRoutes } from "../routes/v1/progress.js";
+import { sessionsRoutes } from "../routes/v1/sessions.js";
+import { srsRoutes } from "../routes/v1/srs.js";
 import { scalarOptions, swaggerOptions } from "./api-docs.config.js";
 import { upLoadRoutes } from "../routes/v1/upload/upload.js";
 import { userSettingsRoutes } from "../routes/v1/user-settings.js";
@@ -31,6 +33,8 @@ export async function registerRoutes(app: FastifyInstance) {
     await app.register(configRoutes, { prefix: "/v1/config" });
     await app.register(consentRoutes, { prefix: "/v1/consents" });
     await app.register(progressRoutes, { prefix: "/v1/progress" });
+    await app.register(srsRoutes, { prefix: "/v1/srs" });
+    await app.register(sessionsRoutes, { prefix: "/v1/sessions" });
     await app.register(userSettingsRoutes, { prefix: "/v1/user/settings" });
 
     // Temporary legacy aliases (to be removed after client migration).

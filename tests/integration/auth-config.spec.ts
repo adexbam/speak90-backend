@@ -535,4 +535,159 @@ describe("Ticket 30.1 auth + config endpoints", () => {
             updatedAt: newer,
         });
     });
+
+    it("upserts and lists SRS cards with updatedAt conflict handling", async () => {
+        const deviceId = `test-device-${randomUUID()}`;
+        const auth = await app!.inject({
+            method: "POST",
+            url: "/v1/auth/device-session",
+            payload: {
+                deviceId,
+                platform: "ios",
+                appVersion: "1.3.0",
+            },
+        });
+        const accessToken = auth.json<{ accessToken: string }>().accessToken;
+
+        const older = new Date("2026-02-20T10:00:00.000Z").toISOString();
+        const newer = new Date("2026-02-20T10:05:00.000Z").toISOString();
+
+        const first = await app!.inject({
+            method: "PUT",
+            url: "/v1/srs/cards/bulk",
+            headers: { authorization: `Bearer ${accessToken}` },
+            payload: {
+                cards: [
+                    {
+                        cardId: "card-1",
+                        box: 2,
+                        dueAt: newer,
+                        reviewCount: 4,
+                        updatedAt: newer,
+                    },
+                ],
+            },
+        });
+        expect(first.statusCode).toBe(200);
+
+        const stale = await app!.inject({
+            method: "PUT",
+            url: "/v1/srs/cards/bulk",
+            headers: { authorization: `Bearer ${accessToken}` },
+            payload: {
+                cards: [
+                    {
+                        cardId: "card-1",
+                        box: 1,
+                        dueAt: older,
+                        reviewCount: 1,
+                        updatedAt: older,
+                    },
+                ],
+            },
+        });
+        expect(stale.statusCode).toBe(200);
+
+        const list = await app!.inject({
+            method: "GET",
+            url: "/v1/srs/cards",
+            headers: { authorization: `Bearer ${accessToken}` },
+        });
+        expect(list.statusCode).toBe(200);
+        expect(
+            list.json<{
+                cards: Array<{
+                    cardId: string;
+                    box: number;
+                    reviewCount: number;
+                    updatedAt: string;
+                }>;
+            }>().cards.find((c) => c.cardId === "card-1")
+        ).toMatchObject({
+            cardId: "card-1",
+            box: 2,
+            reviewCount: 4,
+            updatedAt: newer,
+        });
+    });
+
+    it("appends SRS review events", async () => {
+        const deviceId = `test-device-${randomUUID()}`;
+        const auth = await app!.inject({
+            method: "POST",
+            url: "/v1/auth/device-session",
+            payload: {
+                deviceId,
+                platform: "android",
+                appVersion: "1.3.1",
+            },
+        });
+        const accessToken = auth.json<{ accessToken: string }>().accessToken;
+
+        const response = await app!.inject({
+            method: "POST",
+            url: "/v1/srs/reviews",
+            headers: { authorization: `Bearer ${accessToken}` },
+            payload: {
+                cardId: "card-7",
+                result: "good",
+                reviewedAt: new Date().toISOString(),
+            },
+        });
+
+        expect(response.statusCode).toBe(201);
+        expect(
+            response.json<{
+                reviewId: string;
+                cardId: string;
+                result: string;
+            }>()
+        ).toMatchObject({
+            cardId: "card-7",
+            result: "good",
+        });
+    });
+
+    it("records session completion and is retry-safe for same completion key", async () => {
+        const deviceId = `test-device-${randomUUID()}`;
+        const auth = await app!.inject({
+            method: "POST",
+            url: "/v1/auth/device-session",
+            payload: {
+                deviceId,
+                platform: "ios",
+                appVersion: "1.3.2",
+            },
+        });
+        const accessToken = auth.json<{ accessToken: string }>().accessToken;
+        const completedAt = new Date("2026-02-20T11:00:00.000Z").toISOString();
+
+        const first = await app!.inject({
+            method: "POST",
+            url: "/v1/sessions/complete",
+            headers: { authorization: `Bearer ${accessToken}` },
+            payload: {
+                dayNumber: 8,
+                elapsedSeconds: 2640,
+                completedAt,
+            },
+        });
+        expect(first.statusCode).toBe(201);
+        const firstBody = first.json<{ sessionId: string }>();
+
+        const retry = await app!.inject({
+            method: "POST",
+            url: "/v1/sessions/complete",
+            headers: { authorization: `Bearer ${accessToken}` },
+            payload: {
+                dayNumber: 8,
+                elapsedSeconds: 2640,
+                completedAt,
+            },
+        });
+        expect(retry.statusCode).toBe(201);
+        const retryBody = retry.json<{ sessionId: string }>();
+
+        expect(retryBody.sessionId).toBe(firstBody.sessionId);
+    });
 });
