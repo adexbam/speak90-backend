@@ -11,10 +11,17 @@ export async function saveBackupSettings(input: {
     enabled: boolean;
     retentionDays?: number;
 }): Promise<BackupSettings> {
+    const current =
+        input.retentionDays === undefined
+            ? await getBackupSettings(input.subjectId)
+            : undefined;
     return upsertBackupSettings({
         subjectId: input.subjectId,
         enabled: input.enabled,
-        retentionDays: input.retentionDays ?? DEFAULT_RETENTION_DAYS,
+        retentionDays:
+            input.retentionDays ??
+            current?.retentionDays ??
+            DEFAULT_RETENTION_DAYS,
     });
 }
 

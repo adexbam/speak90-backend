@@ -3,29 +3,23 @@ import {
     readBackupSettings,
     saveBackupSettings,
 } from "../../services/user-settings.service.js";
+import { requireSubjectId } from "../../services/request-auth.service.js";
 
 type UpsertBackupSettingsBody = {
     enabled: boolean;
     retentionDays?: number;
 };
 
-function requireSubjectId(request: FastifyRequest): string {
-    const subjectId = (request.user as { sub?: string } | undefined)?.sub;
-    if (!subjectId) {
-        throw request.server.httpErrors.unauthorized("Missing token subject");
-    }
-    return subjectId;
-}
-
 export async function putBackupSettingsHandler(
-    request: FastifyRequest<{ Body: UpsertBackupSettingsBody }>,
+    request: FastifyRequest,
     reply: FastifyReply
 ) {
+    const body = request.body as UpsertBackupSettingsBody;
     const subjectId = requireSubjectId(request);
     const settings = await saveBackupSettings({
         subjectId,
-        enabled: request.body.enabled,
-        retentionDays: request.body.retentionDays,
+        enabled: body.enabled,
+        retentionDays: body.retentionDays,
     });
     reply.code(200);
     return settings;

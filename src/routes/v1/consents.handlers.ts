@@ -3,6 +3,7 @@ import {
     readAudioCloudConsent,
     saveAudioCloudConsent,
 } from "../../services/consent.service.js";
+import { requireSubjectId } from "../../services/request-auth.service.js";
 
 type UpsertAudioCloudConsentBody = {
     decision: "granted" | "denied";
@@ -10,24 +11,17 @@ type UpsertAudioCloudConsentBody = {
     policyVersion: string;
 };
 
-function requireSubjectId(request: FastifyRequest): string {
-    const subjectId = (request.user as { sub?: string } | undefined)?.sub;
-    if (!subjectId) {
-        throw request.server.httpErrors.unauthorized("Missing token subject");
-    }
-    return subjectId;
-}
-
 export async function postAudioCloudConsentHandler(
-    request: FastifyRequest<{ Body: UpsertAudioCloudConsentBody }>,
+    request: FastifyRequest,
     reply: FastifyReply
 ) {
+    const body = request.body as UpsertAudioCloudConsentBody;
     const subjectId = requireSubjectId(request);
     const consent = await saveAudioCloudConsent({
         subjectId,
-        decision: request.body.decision,
-        decidedAt: request.body.decidedAt,
-        policyVersion: request.body.policyVersion,
+        decision: body.decision,
+        decidedAt: body.decidedAt,
+        policyVersion: body.policyVersion,
     });
     reply.code(200);
     return consent;

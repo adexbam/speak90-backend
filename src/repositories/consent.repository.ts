@@ -16,6 +16,7 @@ export async function createAudioCloudConsent(params: {
     const result = await pool.query<{
         decision: "granted" | "denied";
         decided_at: string;
+        decided_at_client: string | null;
         policy_version: string;
     }>(
         `
@@ -28,7 +29,7 @@ export async function createAudioCloudConsent(params: {
             decided_at_client
         )
         VALUES ($1, 'audio_cloud', $2, $3, NOW(), $4)
-        RETURNING decision, decided_at, policy_version
+        RETURNING decision, decided_at, decided_at_client, policy_version
         `,
         [
             params.subjectId,
@@ -41,7 +42,9 @@ export async function createAudioCloudConsent(params: {
     const row = result.rows[0];
     return {
         decision: row.decision,
-        decidedAt: new Date(row.decided_at).toISOString(),
+        decidedAt: new Date(
+            row.decided_at_client ?? row.decided_at
+        ).toISOString(),
         policyVersion: row.policy_version,
     };
 }
@@ -53,10 +56,11 @@ export async function getLatestAudioCloudConsent(
     const result = await pool.query<{
         decision: "granted" | "denied";
         decided_at: string;
+        decided_at_client: string | null;
         policy_version: string;
     }>(
         `
-        SELECT decision, decided_at, policy_version
+        SELECT decision, decided_at, decided_at_client, policy_version
         FROM user_consents
         WHERE subject_id = $1 AND consent_type = 'audio_cloud'
         ORDER BY decided_at DESC, created_at DESC
@@ -72,7 +76,9 @@ export async function getLatestAudioCloudConsent(
 
     return {
         decision: row.decision,
-        decidedAt: new Date(row.decided_at).toISOString(),
+        decidedAt: new Date(
+            row.decided_at_client ?? row.decided_at
+        ).toISOString(),
         policyVersion: row.policy_version,
     };
 }

@@ -26,6 +26,42 @@ describe("Ticket 30.1 auth + config endpoints", () => {
         }
     });
 
+    async function createPremiumSession(params?: {
+        platform?: string;
+        appVersion?: string;
+    }): Promise<{ accessToken: string; subjectId: string }> {
+        const created = await app!.inject({
+            method: "POST",
+            url: "/v1/auth/device-session",
+            payload: {
+                deviceId: `test-device-${randomUUID()}`,
+                platform: params?.platform ?? "ios",
+                appVersion: params?.appVersion ?? "1.0.0",
+            },
+        });
+
+        expect(created.statusCode).toBe(201);
+        const body = created.json<{
+            accessToken: string;
+            userIdOrDeviceId: string;
+        }>();
+
+        await getDbPool().query(
+            `
+            INSERT INTO entitlements (subject_id, entitlement_key, active, source, granted_at)
+            VALUES ($1, 'premium_iap', TRUE, 'test', NOW())
+            ON CONFLICT (subject_id, entitlement_key) DO UPDATE
+            SET active = TRUE, source = EXCLUDED.source, granted_at = NOW(), updated_at = NOW()
+            `,
+            [body.userIdOrDeviceId]
+        );
+
+        return {
+            accessToken: body.accessToken,
+            subjectId: body.userIdOrDeviceId,
+        };
+    }
+
     it("creates device session and persists token hashes", async () => {
         const deviceId = `test-device-${randomUUID()}`;
         const response = await app!.inject({
@@ -179,24 +215,17 @@ describe("Ticket 30.1 auth + config endpoints", () => {
     });
 
     it("round-trips audio cloud consent for authenticated device", async () => {
-        const deviceId = `test-device-${randomUUID()}`;
-        const auth = await app!.inject({
-            method: "POST",
-            url: "/v1/auth/device-session",
-            payload: {
-                deviceId,
-                platform: "android",
-                appVersion: "1.0.1",
-            },
+        const auth = await createPremiumSession({
+            platform: "android",
+            appVersion: "1.0.1",
         });
-        const authBody = auth.json<{ accessToken: string }>();
 
         const decidedAt = new Date().toISOString();
         const post = await app!.inject({
             method: "POST",
             url: "/v1/consents/audio-cloud",
             headers: {
-                authorization: `Bearer ${authBody.accessToken}`,
+                authorization: `Bearer ${auth.accessToken}`,
             },
             payload: {
                 decision: "granted",
@@ -213,12 +242,13 @@ describe("Ticket 30.1 auth + config endpoints", () => {
         }>();
         expect(postBody.decision).toBe("granted");
         expect(postBody.policyVersion).toBe("2026-02-19");
+        expect(postBody.decidedAt).toBe(decidedAt);
 
         const get = await app!.inject({
             method: "GET",
             url: "/v1/consents/audio-cloud",
             headers: {
-                authorization: `Bearer ${authBody.accessToken}`,
+                authorization: `Bearer ${auth.accessToken}`,
             },
         });
 
@@ -231,26 +261,20 @@ describe("Ticket 30.1 auth + config endpoints", () => {
         expect(getBody).not.toBeNull();
         expect(getBody?.decision).toBe("granted");
         expect(getBody?.policyVersion).toBe("2026-02-19");
+        expect(getBody?.decidedAt).toBe(decidedAt);
     });
 
     it("stores denied consent and returns denied as latest decision", async () => {
-        const deviceId = `test-device-${randomUUID()}`;
-        const auth = await app!.inject({
-            method: "POST",
-            url: "/v1/auth/device-session",
-            payload: {
-                deviceId,
-                platform: "android",
-                appVersion: "1.0.1",
-            },
+        const auth = await createPremiumSession({
+            platform: "android",
+            appVersion: "1.0.1",
         });
-        const authBody = auth.json<{ accessToken: string }>();
 
         const post = await app!.inject({
             method: "POST",
             url: "/v1/consents/audio-cloud",
             headers: {
-                authorization: `Bearer ${authBody.accessToken}`,
+                authorization: `Bearer ${auth.accessToken}`,
             },
             payload: {
                 decision: "denied",
@@ -264,7 +288,7 @@ describe("Ticket 30.1 auth + config endpoints", () => {
             method: "GET",
             url: "/v1/consents/audio-cloud",
             headers: {
-                authorization: `Bearer ${authBody.accessToken}`,
+                authorization: `Bearer ${auth.accessToken}`,
             },
         });
         expect(get.statusCode).toBe(200);
@@ -277,23 +301,16 @@ describe("Ticket 30.1 auth + config endpoints", () => {
     });
 
     it("returns default backup settings and supports update", async () => {
-        const deviceId = `test-device-${randomUUID()}`;
-        const auth = await app!.inject({
-            method: "POST",
-            url: "/v1/auth/device-session",
-            payload: {
-                deviceId,
-                platform: "ios",
-                appVersion: "1.0.2",
-            },
+        const auth = await createPremiumSession({
+            platform: "ios",
+            appVersion: "1.0.2",
         });
-        const authBody = auth.json<{ accessToken: string }>();
 
         const initial = await app!.inject({
             method: "GET",
             url: "/v1/user/settings/backup",
             headers: {
-                authorization: `Bearer ${authBody.accessToken}`,
+                authorization: `Bearer ${auth.accessToken}`,
             },
         });
         expect(initial.statusCode).toBe(200);
@@ -303,7 +320,7 @@ describe("Ticket 30.1 auth + config endpoints", () => {
             method: "PUT",
             url: "/v1/user/settings/backup",
             headers: {
-                authorization: `Bearer ${authBody.accessToken}`,
+                authorization: `Bearer ${auth.accessToken}`,
             },
             payload: {
                 enabled: true,
@@ -317,11 +334,24 @@ describe("Ticket 30.1 auth + config endpoints", () => {
             method: "GET",
             url: "/v1/user/settings/backup",
             headers: {
-                authorization: `Bearer ${authBody.accessToken}`,
+                authorization: `Bearer ${auth.accessToken}`,
             },
         });
         expect(get.statusCode).toBe(200);
         expect(get.json()).toEqual({ enabled: true, retentionDays: 120 });
+
+        const toggleOnly = await app!.inject({
+            method: "PUT",
+            url: "/v1/user/settings/backup",
+            headers: {
+                authorization: `Bearer ${auth.accessToken}`,
+            },
+            payload: {
+                enabled: false,
+            },
+        });
+        expect(toggleOnly.statusCode).toBe(200);
+        expect(toggleOnly.json()).toEqual({ enabled: false, retentionDays: 120 });
     });
 
     it("rejects unauthenticated consent and backup settings access", async () => {
@@ -338,18 +368,41 @@ describe("Ticket 30.1 auth + config endpoints", () => {
         expect(backupGet.statusCode).toBe(401);
     });
 
-    it("rejects invalid consent decidedAt and invalid backup retentionDays", async () => {
-        const deviceId = `test-device-${randomUUID()}`;
+    it("rejects authenticated non-premium access to premium cloud endpoints", async () => {
         const auth = await app!.inject({
             method: "POST",
             url: "/v1/auth/device-session",
             payload: {
-                deviceId,
+                deviceId: `test-device-${randomUUID()}`,
                 platform: "ios",
                 appVersion: "1.0.3",
             },
         });
         const accessToken = auth.json<{ accessToken: string }>().accessToken;
+
+        const consentGet = await app!.inject({
+            method: "GET",
+            url: "/v1/consents/audio-cloud",
+            headers: { authorization: `Bearer ${accessToken}` },
+        });
+        expect(consentGet.statusCode).toBe(403);
+        expect(consentGet.json<{ code?: string }>().code).toBe("PREMIUM_REQUIRED");
+
+        const backupGet = await app!.inject({
+            method: "GET",
+            url: "/v1/user/settings/backup",
+            headers: { authorization: `Bearer ${accessToken}` },
+        });
+        expect(backupGet.statusCode).toBe(403);
+        expect(backupGet.json<{ code?: string }>().code).toBe("PREMIUM_REQUIRED");
+    });
+
+    it("rejects invalid consent decidedAt and invalid backup retentionDays", async () => {
+        const auth = await createPremiumSession({
+            platform: "ios",
+            appVersion: "1.0.3",
+        });
+        const accessToken = auth.accessToken;
 
         const badConsent = await app!.inject({
             method: "POST",
@@ -376,23 +429,16 @@ describe("Ticket 30.1 auth + config endpoints", () => {
     });
 
     it("rejects audio upload list when consent/backup requirements are not met", async () => {
-        const deviceId = `test-device-${randomUUID()}`;
-        const auth = await app!.inject({
-            method: "POST",
-            url: "/v1/auth/device-session",
-            payload: {
-                deviceId,
-                platform: "ios",
-                appVersion: "1.1.0",
-            },
+        const auth = await createPremiumSession({
+            platform: "ios",
+            appVersion: "1.1.0",
         });
-        const authBody = auth.json<{ accessToken: string }>();
 
         const blocked = await app!.inject({
             method: "GET",
             url: "/v1/audio/uploads",
             headers: {
-                authorization: `Bearer ${authBody.accessToken}`,
+                authorization: `Bearer ${auth.accessToken}`,
             },
         });
 
@@ -415,23 +461,16 @@ describe("Ticket 30.1 auth + config endpoints", () => {
     });
 
     it("returns audio upload list when consent is granted and backup is enabled", async () => {
-        const deviceId = `test-device-${randomUUID()}`;
-        const auth = await app!.inject({
-            method: "POST",
-            url: "/v1/auth/device-session",
-            payload: {
-                deviceId,
-                platform: "android",
-                appVersion: "1.1.1",
-            },
+        const auth = await createPremiumSession({
+            platform: "android",
+            appVersion: "1.1.1",
         });
-        const authBody = auth.json<{ accessToken: string }>();
 
         await app!.inject({
             method: "POST",
             url: "/v1/consents/audio-cloud",
             headers: {
-                authorization: `Bearer ${authBody.accessToken}`,
+                authorization: `Bearer ${auth.accessToken}`,
             },
             payload: {
                 decision: "granted",
@@ -444,7 +483,7 @@ describe("Ticket 30.1 auth + config endpoints", () => {
             method: "PUT",
             url: "/v1/user/settings/backup",
             headers: {
-                authorization: `Bearer ${authBody.accessToken}`,
+                authorization: `Bearer ${auth.accessToken}`,
             },
             payload: {
                 enabled: true,
@@ -455,7 +494,7 @@ describe("Ticket 30.1 auth + config endpoints", () => {
             method: "GET",
             url: "/v1/audio/uploads",
             headers: {
-                authorization: `Bearer ${authBody.accessToken}`,
+                authorization: `Bearer ${auth.accessToken}`,
             },
         });
 
@@ -464,17 +503,11 @@ describe("Ticket 30.1 auth + config endpoints", () => {
     });
 
     it("returns 404 for deleting unknown upload and supports no-op purge", async () => {
-        const deviceId = `test-device-${randomUUID()}`;
-        const auth = await app!.inject({
-            method: "POST",
-            url: "/v1/auth/device-session",
-            payload: {
-                deviceId,
-                platform: "android",
-                appVersion: "1.1.2",
-            },
+        const auth = await createPremiumSession({
+            platform: "android",
+            appVersion: "1.1.2",
         });
-        const accessToken = auth.json<{ accessToken: string }>().accessToken;
+        const accessToken = auth.accessToken;
 
         await app!.inject({
             method: "POST",

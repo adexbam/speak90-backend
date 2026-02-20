@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { requirePremiumEntitlement } from "../../middleware/premium.middleware.js";
 import {
     getAudioCloudConsentHandler,
     postAudioCloudConsentHandler,
@@ -13,6 +14,7 @@ export async function consentRoutes(app: FastifyInstance) {
         "/audio-cloud",
         {
             config: { auth: true },
+            preHandler: requirePremiumEntitlement,
             schema: createAudioCloudConsentSchema,
         },
         postAudioCloudConsentHandler
@@ -22,6 +24,7 @@ export async function consentRoutes(app: FastifyInstance) {
         "/audio-cloud",
         {
             config: { auth: true },
+            preHandler: requirePremiumEntitlement,
             schema: getAudioCloudConsentSchema,
         },
         getAudioCloudConsentHandler

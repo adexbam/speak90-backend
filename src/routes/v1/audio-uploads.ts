@@ -1,5 +1,6 @@
 import multipart from "@fastify/multipart";
 import type { FastifyInstance } from "fastify";
+import { requirePremiumEntitlement } from "../../middleware/premium.middleware.js";
 import {
     deleteAudioUploadHandler,
     getAudioUploadsHandler,
@@ -23,6 +24,7 @@ export async function audioUploadsRoutes(app: FastifyInstance) {
         "/",
         {
             config: { auth: true },
+            preHandler: requirePremiumEntitlement,
             schema: postAudioUploadSchema,
         },
         postAudioUploadHandler
@@ -32,6 +34,7 @@ export async function audioUploadsRoutes(app: FastifyInstance) {
         "/",
         {
             config: { auth: true },
+            preHandler: requirePremiumEntitlement,
             schema: getAudioUploadsSchema,
         },
         getAudioUploadsHandler
@@ -41,6 +44,7 @@ export async function audioUploadsRoutes(app: FastifyInstance) {
         "/:uploadId",
         {
             config: { auth: true },
+            preHandler: requirePremiumEntitlement,
             schema: deleteAudioUploadSchema,
         },
         deleteAudioUploadHandler
@@ -50,6 +54,7 @@ export async function audioUploadsRoutes(app: FastifyInstance) {
         "/purge",
         {
             config: { auth: true },
+            preHandler: requirePremiumEntitlement,
             schema: purgeAudioUploadsSchema,
         },
         purgeAudioUploadsHandler

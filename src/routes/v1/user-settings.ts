@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { requirePremiumEntitlement } from "../../middleware/premium.middleware.js";
 import {
     getBackupSettingsHandler,
     putBackupSettingsHandler,
@@ -13,6 +14,7 @@ export async function userSettingsRoutes(app: FastifyInstance) {
         "/backup",
         {
             config: { auth: true },
+            preHandler: requirePremiumEntitlement,
             schema: upsertBackupSettingsSchema,
         },
         putBackupSettingsHandler
@@ -22,6 +24,7 @@ export async function userSettingsRoutes(app: FastifyInstance) {
         "/backup",
         {
             config: { auth: true },
+            preHandler: requirePremiumEntitlement,
             schema: getBackupSettingsSchema,
         },
         getBackupSettingsHandler

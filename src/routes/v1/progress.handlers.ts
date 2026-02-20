@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { readProgress, saveProgress } from "../../services/progress.service.js";
+import { requireSubjectId } from "../../services/request-auth.service.js";
 
 type PutProgressBody = {
     currentDay: number;
@@ -8,14 +9,6 @@ type PutProgressBody = {
     sessionsCompleted: number[];
     updatedAt: string;
 };
-
-function requireSubjectId(request: FastifyRequest): string {
-    const subjectId = (request.user as { sub?: string } | undefined)?.sub;
-    if (!subjectId) {
-        throw request.server.httpErrors.unauthorized("Missing token subject");
-    }
-    return subjectId;
-}
 
 export async function putProgressHandler(
     request: FastifyRequest<{ Body: PutProgressBody }>,
