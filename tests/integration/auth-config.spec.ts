@@ -90,4 +90,107 @@ describe.skipIf(!runDbIntegration)("Ticket 30.1 auth + config endpoints", () => 
         expect(typeof body.v3_cloud_backup).toBe("boolean");
         expect(typeof body.v3_premium_iap).toBe("boolean");
     });
+
+    it("round-trips audio cloud consent for authenticated device", async () => {
+        const deviceId = `test-device-${randomUUID()}`;
+        const auth = await app!.inject({
+            method: "POST",
+            url: "/v1/auth/device-session",
+            payload: {
+                deviceId,
+                platform: "android",
+                appVersion: "1.0.1",
+            },
+        });
+        const authBody = auth.json<{ accessToken: string }>();
+
+        const decidedAt = new Date().toISOString();
+        const post = await app!.inject({
+            method: "POST",
+            url: "/v1/consents/audio-cloud",
+            headers: {
+                authorization: `Bearer ${authBody.accessToken}`,
+            },
+            payload: {
+                decision: "granted",
+                decidedAt,
+                policyVersion: "2026-02-19",
+            },
+        });
+
+        expect(post.statusCode).toBe(200);
+        const postBody = post.json<{
+            decision: "granted" | "denied";
+            decidedAt: string;
+            policyVersion: string;
+        }>();
+        expect(postBody.decision).toBe("granted");
+        expect(postBody.policyVersion).toBe("2026-02-19");
+
+        const get = await app!.inject({
+            method: "GET",
+            url: "/v1/consents/audio-cloud",
+            headers: {
+                authorization: `Bearer ${authBody.accessToken}`,
+            },
+        });
+
+        expect(get.statusCode).toBe(200);
+        const getBody = get.json<{
+            decision: "granted" | "denied";
+            decidedAt: string;
+            policyVersion: string;
+        } | null>();
+        expect(getBody).not.toBeNull();
+        expect(getBody?.decision).toBe("granted");
+        expect(getBody?.policyVersion).toBe("2026-02-19");
+    });
+
+    it("returns default backup settings and supports update", async () => {
+        const deviceId = `test-device-${randomUUID()}`;
+        const auth = await app!.inject({
+            method: "POST",
+            url: "/v1/auth/device-session",
+            payload: {
+                deviceId,
+                platform: "ios",
+                appVersion: "1.0.2",
+            },
+        });
+        const authBody = auth.json<{ accessToken: string }>();
+
+        const initial = await app!.inject({
+            method: "GET",
+            url: "/v1/user/settings/backup",
+            headers: {
+                authorization: `Bearer ${authBody.accessToken}`,
+            },
+        });
+        expect(initial.statusCode).toBe(200);
+        expect(initial.json()).toEqual({ enabled: false, retentionDays: 90 });
+
+        const put = await app!.inject({
+            method: "PUT",
+            url: "/v1/user/settings/backup",
+            headers: {
+                authorization: `Bearer ${authBody.accessToken}`,
+            },
+            payload: {
+                enabled: true,
+                retentionDays: 120,
+            },
+        });
+        expect(put.statusCode).toBe(200);
+        expect(put.json()).toEqual({ enabled: true, retentionDays: 120 });
+
+        const get = await app!.inject({
+            method: "GET",
+            url: "/v1/user/settings/backup",
+            headers: {
+                authorization: `Bearer ${authBody.accessToken}`,
+            },
+        });
+        expect(get.statusCode).toBe(200);
+        expect(get.json()).toEqual({ enabled: true, retentionDays: 120 });
+    });
 });
