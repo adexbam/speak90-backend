@@ -266,4 +266,109 @@ describe.skipIf(!runDbIntegration)("Ticket 30.1 auth + config endpoints", () => 
         expect(response.statusCode).toBe(200);
         expect(Array.isArray(response.json())).toBe(true);
     });
+
+    it("returns default progress then upserts and reads synced progress", async () => {
+        const deviceId = `test-device-${randomUUID()}`;
+        const auth = await app!.inject({
+            method: "POST",
+            url: "/v1/auth/device-session",
+            payload: {
+                deviceId,
+                platform: "ios",
+                appVersion: "1.2.0",
+            },
+        });
+        const accessToken = auth.json<{ accessToken: string }>().accessToken;
+
+        const initial = await app!.inject({
+            method: "GET",
+            url: "/v1/progress",
+            headers: { authorization: `Bearer ${accessToken}` },
+        });
+        expect(initial.statusCode).toBe(200);
+        expect(initial.json()).toEqual({
+            currentDay: 1,
+            streak: 0,
+            totalMinutes: 0,
+            sessionsCompleted: [],
+            updatedAt: new Date(0).toISOString(),
+        });
+
+        const payload = {
+            currentDay: 4,
+            streak: 3,
+            totalMinutes: 128,
+            sessionsCompleted: [1, 2, 4],
+            updatedAt: new Date().toISOString(),
+        };
+
+        const put = await app!.inject({
+            method: "PUT",
+            url: "/v1/progress",
+            headers: { authorization: `Bearer ${accessToken}` },
+            payload,
+        });
+        expect(put.statusCode).toBe(200);
+        expect(put.json()).toEqual(payload);
+
+        const get = await app!.inject({
+            method: "GET",
+            url: "/v1/progress",
+            headers: { authorization: `Bearer ${accessToken}` },
+        });
+        expect(get.statusCode).toBe(200);
+        expect(get.json()).toEqual(payload);
+    });
+
+    it("applies last-write-wins for progress based on updatedAt", async () => {
+        const deviceId = `test-device-${randomUUID()}`;
+        const auth = await app!.inject({
+            method: "POST",
+            url: "/v1/auth/device-session",
+            payload: {
+                deviceId,
+                platform: "android",
+                appVersion: "1.2.1",
+            },
+        });
+        const accessToken = auth.json<{ accessToken: string }>().accessToken;
+
+        const older = new Date("2026-02-20T10:00:00.000Z").toISOString();
+        const newer = new Date("2026-02-20T10:05:00.000Z").toISOString();
+
+        await app!.inject({
+            method: "PUT",
+            url: "/v1/progress",
+            headers: { authorization: `Bearer ${accessToken}` },
+            payload: {
+                currentDay: 5,
+                streak: 5,
+                totalMinutes: 200,
+                sessionsCompleted: [1, 2, 3, 4, 5],
+                updatedAt: newer,
+            },
+        });
+
+        const staleWrite = await app!.inject({
+            method: "PUT",
+            url: "/v1/progress",
+            headers: { authorization: `Bearer ${accessToken}` },
+            payload: {
+                currentDay: 2,
+                streak: 1,
+                totalMinutes: 40,
+                sessionsCompleted: [1, 2],
+                updatedAt: older,
+            },
+        });
+
+        expect(staleWrite.statusCode).toBe(200);
+        expect(staleWrite.json()).toEqual({
+            currentDay: 5,
+            streak: 5,
+            totalMinutes: 200,
+            sessionsCompleted: [1, 2, 3, 4, 5],
+            updatedAt: newer,
+        });
+    });
 });

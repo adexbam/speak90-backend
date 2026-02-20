@@ -5,6 +5,7 @@ import { authRoutes } from "../routes/v1/auth.js";
 import { audioUploadsRoutes } from "../routes/v1/audio-uploads.js";
 import { configRoutes } from "../routes/v1/config.js";
 import { consentRoutes } from "../routes/v1/consents.js";
+import { progressRoutes } from "../routes/v1/progress.js";
 import { scalarOptions, swaggerOptions } from "./api-docs.config.js";
 import { upLoadRoutes } from "../routes/v1/upload/upload.js";
 import { userSettingsRoutes } from "../routes/v1/user-settings.js";
@@ -30,6 +31,7 @@ export async function registerRoutes(app: FastifyInstance) {
     await app.register(audioUploadsRoutes, { prefix: "/v1/audio/uploads" });
     await app.register(configRoutes, { prefix: "/v1/config" });
     await app.register(consentRoutes, { prefix: "/v1/consents" });
+    await app.register(progressRoutes, { prefix: "/v1/progress" });
     await app.register(userSettingsRoutes, { prefix: "/v1/user/settings" });
 
     // API reference (Scalar routes are plugin-generated, so we mark them public here)
