@@ -121,10 +121,11 @@ export async function findActiveSessionByRefreshTokenHash(
 
 export async function rotateSessionTokens(params: {
     sessionId: string;
+    expectedRefreshTokenHash: string;
     accessTokenHash: string;
     refreshTokenHash: string;
     expiresAt: Date;
-}): Promise<void> {
+}): Promise<boolean> {
     const pool = getDbPool();
     const result = await pool.query(
         `
@@ -135,16 +136,17 @@ export async function rotateSessionTokens(params: {
             expires_at = $4,
             updated_at = NOW()
         WHERE id = $1
+          AND refresh_token_hash = $5
+          AND expires_at > NOW()
         `,
         [
             params.sessionId,
             params.accessTokenHash,
             params.refreshTokenHash,
             params.expiresAt.toISOString(),
+            params.expectedRefreshTokenHash,
         ]
     );
 
-    if (result.rowCount !== 1) {
-        throw new Error("Failed to rotate session tokens");
-    }
+    return result.rowCount === 1;
 }

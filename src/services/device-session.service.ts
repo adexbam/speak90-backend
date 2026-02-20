@@ -19,6 +19,13 @@ type DeviceSessionResponse = {
     userIdOrDeviceId: string;
 };
 
+export class InvalidRefreshTokenError extends Error {
+    constructor(message = "Invalid or expired refresh token") {
+        super(message);
+        this.name = "InvalidRefreshTokenError";
+    }
+}
+
 function hashToken(token: string): string {
     return createHash("sha256").update(token).digest("hex");
 }
@@ -142,12 +149,12 @@ export async function refreshDeviceSession(input: {
     refreshToken: string;
 }): Promise<DeviceSessionResponse> {
     const secret = getJwtSecret();
-    const session = await findActiveSessionByRefreshTokenHash(
-        hashToken(input.refreshToken)
-    );
+    const expectedRefreshTokenHash = hashToken(input.refreshToken);
+    const session =
+        await findActiveSessionByRefreshTokenHash(expectedRefreshTokenHash);
 
     if (!session) {
-        throw new Error("Invalid or expired refresh token");
+        throw new InvalidRefreshTokenError();
     }
 
     const subjectId = deriveSubjectId(session.deviceId, secret);
@@ -160,12 +167,18 @@ export async function refreshDeviceSession(input: {
         appVersion: session.appVersion || "unknown",
     });
 
-    await rotateSessionTokens({
+    const rotated = await rotateSessionTokens({
         sessionId: session.id,
+        expectedRefreshTokenHash,
         accessTokenHash: hashToken(tokenPair.accessToken),
         refreshTokenHash: hashToken(tokenPair.refreshToken),
         expiresAt: tokenPair.sessionExpiresAt,
     });
+    if (!rotated) {
+        throw new InvalidRefreshTokenError(
+            "Invalid, expired, or already-used refresh token"
+        );
+    }
 
     return {
         accessToken: tokenPair.accessToken,

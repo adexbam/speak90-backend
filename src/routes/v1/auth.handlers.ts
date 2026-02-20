@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import {
     createDeviceSession,
+    InvalidRefreshTokenError,
     refreshDeviceSession,
 } from "../../services/device-session.service.js";
 
@@ -33,9 +34,10 @@ export async function refreshDeviceSessionHandler(
         });
         reply.code(200);
         return session;
-    } catch {
-        throw request.server.httpErrors.unauthorized(
-            "Invalid or expired refresh token"
-        );
+    } catch (error) {
+        if (error instanceof InvalidRefreshTokenError) {
+            throw request.server.httpErrors.unauthorized(error.message);
+        }
+        throw error;
     }
 }

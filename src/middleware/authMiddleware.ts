@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import jwt from "jsonwebtoken";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { isActiveSessionForAccessToken } from "../repositories/device-session.repository.js";
@@ -28,6 +28,13 @@ function parseBearerToken(headerValue: unknown): string | undefined {
 
 function hashToken(token: string): string {
     return createHash("sha256").update(token).digest("hex");
+}
+
+function deriveSubjectId(deviceId: string, secret: string): string {
+    const digest = createHmac("sha256", secret)
+        .update(`device:${deviceId}`)
+        .digest("hex");
+    return `dev_${digest.slice(0, 40)}`;
 }
 
 function validateDeviceClaims(claims: DeviceTokenClaims): {
@@ -67,6 +74,12 @@ export const authenticate = async (req: AuthRequest, reply: FastifyReply) => {
         if (!claimsValidation.ok) {
             return reply.status(401).send({
                 error: claimsValidation.error,
+            });
+        }
+        const expectedSub = deriveSubjectId(decoded.deviceId as string, secret);
+        if (decoded.sub !== expectedSub) {
+            return reply.status(401).send({
+                error: "Unauthorized: token subject/device mismatch",
             });
         }
 
